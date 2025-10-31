@@ -16,13 +16,13 @@ const FIGS = [
   {
     file: "fig2_top10_regions_latest_period.png",
     caption:
-      "2. Top emitters in latest available quarter (auto-switches to regions if country data is absent).",
-    alt: "Top regions or countries by latest available quarter",
+      "2. Top emitters in latest available quarter.",
+    alt: "Top regions by latest available quarter",
   },
   {
     file: "fig3_industry_trends_excl_total.png",
-    caption: "3. Top industry trends (excluding “Total …” categories).",
-    alt: "Emission trends for top industries without total series",
+    caption: "3. Top industry trends.",
+    alt: "Emission trends for top industries",
   },
   {
     file: "fig4_gas_type_stacked_area.png",
@@ -32,14 +32,14 @@ const FIGS = [
   {
     file: "fig5_region_percent_change_countries_only.png",
     caption:
-      "5. Percent change from 2010 → latest full year (countries if available, else regions).",
-    alt: "Percent change in emissions 2010 to latest year by country or region",
+      "5. Percent change from 2010 → 2024.",
+    alt: "Percent change in emissions 2010 to latest year by region",
   },
   {
     file: "fig6_top5_region_trends.png",
     caption:
-      "6. Top emitters’ trends (countries if available; else five regions).",
-    alt: "Trends for top 5 countries or regions",
+      "6. Top emitters’ trends.",
+    alt: "Trends for top 5 regions",
   },
 ];
 
