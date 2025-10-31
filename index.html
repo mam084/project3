@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Emissions Explorer — Checkpoint</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1>Emissions Explorer — Checkpoint</h1>
+      <span class="badge">Interactive Visualization (D3.js)</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Team & Dataset -->
+    <section>
+      <h2>Team & Dataset</h2>
+      <div class="meta">
+        <div class="panel">
+          <strong>Team:</strong> <span id="team-name">[Your Team Name]</span><br/>
+          <span id="team-members" class="muted small"></span>
+        </div>
+        <div class="panel">
+          <strong>Dataset:</strong> Quarterly greenhouse gas emissions (2010–2025) by
+          <em>Industry</em> and <em>Gas Type</em> across countries &amp; regions.
+          Unit: <em>Million metric tons of CO₂-equivalent</em>.
+          <div class="muted small">Source file: <code>emissions.csv</code> with columns 2010Q1…2025Q1 and descriptors (Country, Industry, Gas Type, Unit, etc.).</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Exploratory Visuals -->
+    <section>
+      <h2>Exploratory Visuals (Static)</h2>
+      <div id="fig-grid" class="grid"><!-- populated by script.js --></div>
+    </section>
+
+    <!-- Title & Question -->
+    <section>
+      <h2>Title & Question</h2>
+      <div class="panel">
+        <p id="working-title"><strong>Working Title:</strong> <em>How Have GHG Emissions Shifted Across Sectors and Regions Since 2010?</em></p>
+        <p id="research-question" class="muted small">
+          <strong>Question:</strong> Which industries and regions drive the largest changes in emissions over time, and how do gas-type profiles differ while overall totals rise or fall?
+        </p>
+      </div>
+    </section>
+
+    <!-- Current Progress -->
+    <section>
+      <h2>Current Progress</h2>
+      <ul id="progress-list" class="muted">
+        <li>Data cleaned and reshaped (quarterly long format).</li>
+        <li>Six exploratory plots exported to <code>/images/</code>.</li>
+        <li>Interaction plan drafted (brushing/zoom on timeline; dynamic filters for Region/Industry/Gas).</li>
+        <li>D3 scaffold next: data loader + line chart + legend + dropdowns.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span class="muted small">Deployed with GitHub Pages. No server required.</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
