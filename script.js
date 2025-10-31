@@ -14,7 +14,7 @@ const FIGS = [
     alt: "Global greenhouse gas emissions over time, 2010–2025",
   },
   {
-    file: "fig2_top10_countries_latest_period.png",
+    file: "fig2_top10_regions_latest_period.png",
     caption:
       "2. Top emitters in latest available quarter (auto-switches to regions if country data is absent).",
     alt: "Top regions or countries by latest available quarter",
@@ -30,13 +30,13 @@ const FIGS = [
     alt: "Stacked area of emissions by top gas types",
   },
   {
-    file: "fig5_country_percent_change_countries_only.png",
+    file: "fig5_region_percent_change_countries_only.png",
     caption:
       "5. Percent change from 2010 → latest full year (countries if available, else regions).",
     alt: "Percent change in emissions 2010 to latest year by country or region",
   },
   {
-    file: "fig6_top5_country_trends.png",
+    file: "fig6_top5_region_trends.png",
     caption:
       "6. Top emitters’ trends (countries if available; else five regions).",
     alt: "Trends for top 5 countries or regions",
