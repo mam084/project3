@@ -3,105 +3,76 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Emissions Explorer — Checkpoint</title>
-  <link rel="stylesheet" href="styles.css" />
+  <title>Emissions Explorer — What’s Driving Change?</title>
+  <style>
+    :root {
+      --bg: #0b0e1a;
+      --panel: #0f1220;
+      --border: #1f2436;
+      --text: #e8eaed;
+      --muted: #aab2bd;
+      --accent: #7aa2ff;
+    }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    .wrap { max-width: 1120px; margin: 28px auto 64px; padding: 0 16px; }
+    h1 { font-weight: 700; margin: 0 0 8px; }
+    h2 { margin: 28px 0 12px; }
+    p { line-height: 1.5; color: var(--muted); }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+    #controls { display:flex; align-items:center; flex-wrap:wrap; gap:.75rem; }
+    #controls select { background:#0f1220; color:#e8eaed; border:1px solid var(--border); border-radius:8px; padding:.35rem .55rem }
+    #viz svg text { fill: var(--muted) }
+    #tooltip { position:fixed; pointer-events:none; padding:.35rem .5rem; border:1px solid #222735; border-radius:6px; background:#0f1220; color:#e8eaed; font-size:.9rem; display:none }
+    .muted { color: var(--muted); }
+    .small { font-size: 0.9rem; }
+    .note { border-left: 3px solid var(--accent); padding-left: 10px; }
+    a { color: var(--accent); }
+  </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap">
-      <h1>Emissions Explorer — Checkpoint</h1>
-      <span class="badge">Interactive Visualization (D3.js)</span>
-    </div>
-  </header>
-
   <main class="wrap">
-    <!-- Team & Dataset -->
-    <section>
-      <h2>Team & Dataset</h2>
-      <div class="meta">
-        <div class="panel">
-          <strong>Team:</strong> <span id="team-name">[Your Team Name]</span><br/>
-          <span id="team-members" class="muted small"></span>
-        </div>
-        <div class="panel">
-          <strong>Dataset:</strong> Quarterly greenhouse gas emissions (2010–2025) by
-          <em>Industry</em> and <em>Gas Type</em> across countries &amp; regions.
-          Unit: <em>Million metric tons of CO₂-equivalent</em>.
-          <div class="muted small">Source file: <code>emissions.csv</code> with columns 2010Q1…2025Q1 and descriptors (Country, Industry, Gas Type, Unit, etc.).</div>
-        </div>
-      </div>
-    </section>
+    <header>
+      <h1>Emissions Explorer</h1>
+      <p class="muted">Within any region you pick, which sectors or gas types drove the change in GHG emissions since 2010, and how did the pandemic dip and rebound vary across them?</p>
+    </header>
 
     <section id="interactive">
-  <h2>Interactive — What’s Driving Change in Each Region?</h2>
-
-  <div class="panel" id="controls">
-    <label>
-      Region:
-      <select id="regionSelect"></select>
-    </label>
-
-    <label style="margin-left:1rem;">
-      Group by:
-      <select id="groupBySelect">
-        <option value="Industry">Industry</option>
-        <option value="Gas Type">Gas Type</option>
-      </select>
-    </label>
-
-    <label style="margin-left:1rem;">
-      Metric:
-      <select id="metricSelect">
-        <option value="absolute">Absolute</option>
-        <option value="pct_change">Percent change since 2010</option>
-      </select>
-    </label>
-  </div>
-
-  <div id="viz" class="panel" style="padding:0;">
-    <!-- SVGs are injected by script.js -->
-  </div>
-
-  <p class="muted small" style="margin-top:.75rem;">
-    Tip: drag the gray brush in the overview to zoom; click legend items to toggle series; hover the main
-    chart for exact values and percent change.
-  </p>
-</section>
-
-    <!-- Exploratory Visuals -->
-    <section>
-      <h2>Exploratory Visuals (Static)</h2>
-      <div id="fig-grid" class="grid"><!-- populated by script.js --></div>
-    </section>
-
-    <!-- Title & Question -->
-    <section>
-      <h2>Title & Question</h2>
-      <div class="panel">
-        <p id="working-title"><strong>Working Title:</strong> <em>How Have GHG Emissions Shifted Across Sectors and Regions Since 2010?</em></p>
-        <p id="research-question" class="muted small">
-          <strong>Question:</strong> Which industries and regions drive the largest changes in emissions over time?
-        </p>
+      <h2>Interactive — What’s Driving Change in Each Region?</h2>
+      <div id="controls" class="panel">
+        <label>Region: <select id="regionSelect"></select></label>
+        <label>Group by:
+          <select id="groupBySelect">
+            <option value="Industry">Industry</option>
+            <option value="Gas Type">Gas Type</option>
+          </select>
+        </label>
+        <label>Metric:
+          <select id="metricSelect">
+            <option value="absolute">Absolute</option>
+            <option value="pct_change">Percent change since 2010</option>
+          </select>
+        </label>
       </div>
+      <div id="viz" class="panel" style="margin-top:12px; padding:0;"></div>
+      <p class="muted small" style="margin-top:.75rem;">
+        Tip: drag the gray brush in the overview to zoom; click legend items to toggle series; hover the main chart for exact values and percent change.
+      </p>
     </section>
 
-    <!-- Current Progress -->
-    <section>
-      <h2>Current Progress</h2>
-      <ul id="progress-list" class="muted">
-        <li>Data cleaned and reshaped (quarterly long format).</li>
-        <li>Six exploratory plots.</li>
-        <li>Interaction plan (zoom on timeline and dynamic filters for different categories).</li>
-      </ul>
+    <section id="writeup">
+      <h2>Write‑up</h2>
+      <div class="panel">
+        <h3>Rationale (Design Decisions)</h3>
+        <p class="note">I focus on a single region at a time so patterns aren’t drowned out by scale differences across continents. A stacked area chart shows both total and composition; a Top‑N cap keeps the view readable. Brush + zoom supports close reading of short windows, while the legend allows isolating components. The %‑change metric normalizes baselines to compare growth/decline across categories; the absolute metric preserves magnitude for policy relevance. Tooltips provide exact values and percent change (details‑on‑demand). I evaluated small multiples and treemaps, but they either made temporal change harder to read (treemap) or required more screen space (small multiples) than a single‑page design allows.</p>
+        <h3>Development Process</h3>
+        <p>Solo project. Approximately <strong>XX</strong> hours total: planning <strong>YY</strong>, data prep <strong>ZZ</strong>, coding <strong>AA</strong>, polish <strong>BB</strong>. Most time was spent restructuring quarterly data and getting brush‑zoom to play nicely with stacked layouts. I prototyped with absolute values, then added the percent‑change transform and Top‑N ranking. I verified responsiveness at 360–1100px widths and tuned tick density for narrow screens. Potential future work: pin annotations for the 2020 trough, add “Download PNG/CSV” buttons, and persist UI state in the URL hash.</p>
+      </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="wrap">
-      <span class="muted small">Deployed with GitHub Pages.</span>
-    </div>
-  </footer>
-
-  <script src="script.js"></script>
+  <!-- D3 v7 -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- App -->
+  <script src="./script.js"></script>
 </body>
 </html>
