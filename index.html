@@ -32,6 +32,42 @@
       </div>
     </section>
 
+    <section id="interactive">
+  <h2>Interactive — What’s Driving Change in Each Region?</h2>
+
+  <div class="panel" id="controls">
+    <label>
+      Region:
+      <select id="regionSelect"></select>
+    </label>
+
+    <label style="margin-left:1rem;">
+      Group by:
+      <select id="groupBySelect">
+        <option value="Industry">Industry</option>
+        <option value="Gas Type">Gas Type</option>
+      </select>
+    </label>
+
+    <label style="margin-left:1rem;">
+      Metric:
+      <select id="metricSelect">
+        <option value="absolute">Absolute</option>
+        <option value="pct_change">Percent change since 2010</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="viz" class="panel" style="padding:0;">
+    <!-- SVGs are injected by script.js -->
+  </div>
+
+  <p class="muted small" style="margin-top:.75rem;">
+    Tip: drag the gray brush in the overview to zoom; click legend items to toggle series; hover the main
+    chart for exact values and percent change.
+  </p>
+</section>
+
     <!-- Exploratory Visuals -->
     <section>
       <h2>Exploratory Visuals (Static)</h2>
