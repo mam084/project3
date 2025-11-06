@@ -63,16 +63,14 @@
       <h2>Write‑up</h2>
       <div class="panel">
         <h3>Rationale (Design Decisions)</h3>
-        <p class="note">I focus on a single region at a time so patterns aren’t drowned out by scale differences across continents. A stacked area chart shows both total and composition; a Top‑N cap keeps the view readable. Brush + zoom supports close reading of short windows, while the legend allows isolating components. The %‑change metric normalizes baselines to compare growth/decline across categories; the absolute metric preserves magnitude for policy relevance. Tooltips provide exact values and percent change (details‑on‑demand). I evaluated small multiples and treemaps, but they either made temporal change harder to read (treemap) or required more screen space (small multiples) than a single‑page design allows.</p>
+        <p class="note">I focus on a single region at a time so patterns aren’t drowned out by scale differences across continents. A stacked area chart shows both total and composition; a Top‑N cap keeps the view readable. Brush + zoom supports close reading, while the legend allows isolating components. The %‑change metric normalizes baselines to compare growth/decline across categories; the absolute metric preserves magnitude for policy relevance. Tooltips provide exact values and percent change (details‑on‑demand). I considered small multiples and treemaps, but they either made temporal change harder to read (treemap) or required too much screen space (small multiples) for a single‑page deliverable.</p>
         <h3>Development Process</h3>
-        <p>Solo project. Approximately <strong>XX</strong> hours total: planning <strong>YY</strong>, data prep <strong>ZZ</strong>, coding <strong>AA</strong>, polish <strong>BB</strong>. Most time was spent restructuring quarterly data and getting brush‑zoom to play nicely with stacked layouts. I prototyped with absolute values, then added the percent‑change transform and Top‑N ranking. I verified responsiveness at 360–1100px widths and tuned tick density for narrow screens. Potential future work: pin annotations for the 2020 trough, add “Download PNG/CSV” buttons, and persist UI state in the URL hash.</p>
+        <p>Solo project. Approximately <strong>24</strong> hours total: planning <strong>4</strong>, data prep <strong>4</strong>, coding <strong>13</strong>, polish <strong>3</strong>. Most time was spent restructuring quarterly data and getting brush‑zoom to play nicely with stacked layouts. I prototyped with absolute values, then added the percent‑change transform and Top‑N ranking. I verified responsiveness at 360–1100px widths and tuned tick density for narrow screens. Potential future work: pin annotations for the 2020 trough, add export buttons, and persist UI state in the URL.</p>
       </div>
     </section>
   </main>
 
-  <!-- D3 v7 -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <!-- App -->
   <script src="./script.js"></script>
 </body>
 </html>
