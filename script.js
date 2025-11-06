@@ -1,4 +1,4 @@
-// script.js — Emissions Explorer (cleaned)
+// script.js — Emissions Explorer (totals filtered + pct clamp)
 (function() {
   const container = d3.select("#viz");
   if (container.empty()) return;
@@ -15,8 +15,12 @@
     marginOverview: {top: 4, right: 18, bottom: 24, left: 72},
     height: 420,
     heightOverview: 90,
-    color: d3.scaleOrdinal(d3.schemeTableau10)
+    color: d3.scaleOrdinal(d3.schemeTableau10),
+    MAX_PCT: 300  // clamp +/-300% in percent mode
   };
+
+  const EXCLUDE_TOTAL_RE = /(total|all|overall|aggregate|summary)/i;
+  const EXCLUDE_GAS_RE = /^(greenhouse\s*gas|total|all|overall|aggregate|summary)$/i;
 
   const W = getWidth();
   const svg = container.append("svg")
@@ -69,9 +73,6 @@
     return new Date(Date.UTC(year, month, 1));
   }
 
-  function fmt(n){ return d3.format(",")(Math.round(n)); }
-  function pct(a,b){ return (b===0||b==null)? null : (a-b)/b; }
-
   const regionSelect = d3.select("#regionSelect");
   const groupBySelect = d3.select("#groupBySelect");
   const metricSelect = d3.select("#metricSelect");
@@ -82,7 +83,9 @@
     const cols = raw.columns || Object.keys(raw[0]);
     const quarterCols = cols.filter(c => /^\d{4}Q[1-4]$/.test(c)).sort();
 
-    const REGION_COL = "Country";
+    const REGION_COL = cols.includes("Country") ? "Country" : (cols.includes("Region") ? "Region" : null);
+    if (!REGION_COL) throw new Error("Missing Country/Region column");
+
     const HAVE_INDUSTRY = cols.includes("Industry");
     const HAVE_GAS = cols.includes("Gas Type");
 
@@ -127,7 +130,7 @@
 
     function firstNonZero(arr){
       for (let i=0;i<arr.length;i++){
-        if (arr[i] && arr[i].value && Math.abs(arr[i].value) > 0) return arr[i].value;
+        if (arr[i] && isFinite(arr[i].value) && Math.abs(arr[i].value) > 0) return +arr[i].value;
       }
       return 1; // safe fallback
     }
@@ -138,16 +141,7 @@
       const metric = metricSelect.property("value");
 
       const data = long.filter(d => d.region === region);
-      if (!data.length) {
-        gSeries.selectAll("*").remove();
-        xAxisG.selectAll("*").remove();
-        yAxisG.selectAll("*").remove();
-        gOverview.selectAll("*").remove();
-        gLegend.selectAll("*").remove();
-        container.append("div").attr("class","warn").style("color","#ffb4b4").style("padding","8px")
-          .text("No data for this selection.");
-        return;
-      }
+      if (!data.length) return clearViz("No data for this selection.");
 
       const keyAccessor = (d) => (groupBy === "Industry" ? d.industry : d.gas);
       const grouped = d3.rollup(
@@ -159,30 +153,28 @@
 
       let series = [];
       grouped.forEach((byQ, keyRaw) => {
-        const key = keyRaw || "Unspecified";
-        if (groupBy === "Industry" && /total/i.test(key)) return; // remove totals
+        let key = keyRaw || "Unspecified";
+        if (groupBy === "Industry" && EXCLUDE_TOTAL_RE.test(String(key))) return;
+        if (groupBy === "Gas Type" && EXCLUDE_GAS_RE.test(String(key))) return;
 
         const arr = Array.from(byQ, ([ts, val]) => ({ quarter: new Date(+ts), value: +val }))
                         .sort((a,b)=>a.quarter-b.quarter);
         if (!arr.length) return;
 
-        // Use first non-zero baseline for pct mode; avoid NaN
         const base = firstNonZero(arr);
-        arr.forEach(d => d.pct = pct(d.value, base));
+        arr.forEach(d => {
+          const p = (base===0 || base==null) ? null : (d.value - base)/base;
+          // clamp:
+          let pctVal = p==null || !isFinite(p) ? 0 : p*100;
+          if (pctVal > CFG.MAX_PCT) pctVal = CFG.MAX_PCT;
+          if (pctVal < -CFG.MAX_PCT) pctVal = -CFG.MAX_PCT;
+          d.pct = pctVal/100;
+        });
 
         series.push({ key, values: arr, latest: arr[arr.length-1] });
       });
 
-      if (!series.length) {
-        gSeries.selectAll("*").remove();
-        xAxisG.selectAll("*").remove();
-        yAxisG.selectAll("*").remove();
-        gOverview.selectAll("*").remove();
-        gLegend.selectAll("*").remove();
-        container.append("div").attr("class","warn").style("color","#ffb4b4").style("padding","8px")
-          .text("No series available (filters removed everything).");
-        return;
-      }
+      if (!series.length) return clearViz("No series available (filters removed everything).");
 
       // Rank & TopN
       series.sort((a,b) => {
@@ -195,7 +187,7 @@
       CFG.color.domain(keys);
 
       const quarters = top[0] ? top[0].values.map(d => d.quarter) : [];
-      if (!quarters.length) return;
+      if (!quarters.length) return clearViz("No quarters available.");
 
       const stackInput = quarters.map(q => {
         const row = { quarter: q };
@@ -206,7 +198,7 @@
             val = (v && isFinite(v.value)) ? +v.value : 0;
           } else {
             const pctv = (v && isFinite(v.pct)) ? v.pct : 0;
-            val = pctv * 100;
+            val = pctv * 100; // percent points
           }
           row[s.key] = val;
         }
@@ -220,7 +212,7 @@
       x.domain(d3.extent(quarters));
       xOverview.domain(x.domain());
 
-      // Compute robust Y-limits
+      // Y domain
       let yMin = 0, yMax = 0;
       for (let L of layers) {
         for (let d of L) {
@@ -228,10 +220,14 @@
           if (isFinite(d[1]) && d[1] > yMax) yMax = d[1];
         }
       }
-      if (!(isFinite(yMin) && isFinite(yMax))) {
-        yMin = 0; yMax = 1;
+      if (metric === "pct_change") {
+        const m = Math.max(Math.abs(yMin), Math.abs(yMax));
+        const pad = m * 0.08 + 5;
+        yMin = -m - pad;
+        yMax =  m + pad;
+      } else {
+        if (yMin === yMax) { yMin -= 1; yMax += 1; }
       }
-      if (yMin === yMax) { yMin -= 1; yMax += 1; }
       y.domain([yMin, yMax]).nice();
       yOverview.domain(y.domain());
 
@@ -255,7 +251,7 @@
       gOverview.selectAll("g.yov").data([0]).join("g").attr("class","yov")
         .call(d3.axisLeft(yOverview).ticks(3).tickFormat(()=>""));
 
-      // Default brush = last five years (avoid .at for compatibility)
+      // Default brush = last five years
       const lastQ = quarters[quarters.length - 1] || new Date(Date.UTC(2024,0,1));
       const idx0 = Math.max(0, quarters.length - 5*4);
       const x0 = xOverview(quarters[idx0] || quarters[0]);
@@ -264,6 +260,17 @@
 
       renderLegend(keys);
       addHover(stackInput, keys, metric);
+    }
+
+    function clearViz(msg){
+      gSeries.selectAll("*").remove();
+      xAxisG.selectAll("*").remove();
+      yAxisG.selectAll("*").remove();
+      gOverview.selectAll("*").remove();
+      gLegend.selectAll("*").remove();
+      container.selectAll(".warn").remove();
+      container.append("div").attr("class","warn").style("color","#ffb4b4").style("padding","8px").text(msg);
+      return;
     }
 
     function brushed({selection}) {
@@ -288,7 +295,6 @@
           });
         });
       items.append("rect").attr("width",12).attr("height",12).attr("y",-12).attr("fill", d => CFG.color(d));
-      // FIX: stray quote removed in y attribute
       items.append("text").attr("x",16).attr("y",-2).attr("fill","#aab2bd").attr("font-size",".9rem").text(d => d);
     }
 
@@ -308,8 +314,15 @@
           const row = rows[i];
 
           const lines = keys.map(k => {
-            const val = row[k];
-            const txt = (metric==="absolute") ? d3.format(",")(val) : d3.format(".1f")(val) + "%";
+            let val = row[k];
+            let txt;
+            if (metric==="absolute") {
+              txt = d3.format(",")(val);
+            } else {
+              // show "(capped)" if we hit clamp
+              const capped = Math.abs(val) >= CFG.MAX_PCT;
+              txt = d3.format(".1f")(val) + "%" + (capped ? " (capped)" : "");
+            }
             return `<div><span style="display:inline-block;width:.8rem;height:.8rem;background:${CFG.color(k)};margin-right:.4rem;border-radius:2px"></span>${k}: <strong>${txt}</strong></div>`;
           }).join("");
 
