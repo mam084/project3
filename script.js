@@ -1,7 +1,10 @@
-// script.js — Emissions Explorer (robust region detection + safe total filtering)
+// script.js — Emissions Explorer (final hardening)
 (function() {
-  const container = d3.select("#viz");
-  if (container.empty()) return;
+  // Find container (fallback to body if missing)
+  let container = d3.select("#viz");
+  if (container.empty()) {
+    container = d3.select("body").append("div").attr("id","viz").style("margin","1rem");
+  }
 
   function getWidth() {
     const wrap = document.querySelector(".wrap");
@@ -9,7 +12,7 @@
     return Math.min(1100, Math.max(640, w || 800));
   }
 
-  // Stable string -> HSL mapping (namespaced by group-by)
+  // Stable string -> HSL mapping
   const colorCache = new Map();
   function hash32(str){
     let h = 2166136261 >>> 0;
@@ -23,9 +26,7 @@
     const K = groupBy + "::" + key;
     if (colorCache.has(K)) return colorCache.get(K);
     const h = hash32(K) % 360;
-    const s = 62;
-    const l = 56;
-    const c = `hsl(${h}, ${s}%, ${l}%)`;
+    const c = `hsl(${h}, 62%, 56%)`;
     colorCache.set(K, c);
     return c;
   }
@@ -38,7 +39,7 @@
     heightOverview: 90,
     MAX_PCT: 300,
     EXCLUDE_TOTAL_RE: /(total|all|overall|aggregate|summary)/i,
-    EXCLUDE_GAS_RE: /^(greenhouse\s*gas|total|all|overall|aggregate|summary)$/i
+    EXCLUDE_GAS_RE: /^(greenhouse\\s*gas|total|all|overall|aggregate|summary)$/i
   };
 
   const W = getWidth();
@@ -112,19 +113,22 @@
     const HAVE_INDUSTRY = cols.includes("Industry");
     const HAVE_GAS = cols.includes("Gas Type");
 
-    const regions = Array.from(new Set(raw.map(r => (r[REGION_COL]||"").trim())))
-      .sort((a,b) => (a==="World"? -1 : b==="World"? 1 : d3.ascending(a,b)));
+    // Populate region select if present
+    if (!regionSelect.empty()) {
+      const regions = Array.from(new Set(raw.map(r => (r[REGION_COL]||"").trim())))
+        .sort((a,b) => (a==="World"? -1 : b==="World"? 1 : d3.ascending(a,b)));
+      regionSelect.selectAll("option").data(regions, d=>d).join("option")
+        .attr("value", d => d).text(d => d);
+      regionSelect.property("value", regions.indexOf("World")>=0 ? "World" : regions[0]);
+    }
 
-    regionSelect.selectAll("option").data(regions, d=>d).join("option")
-      .attr("value", d => d).text(d => d);
-    regionSelect.property("value", regions.indexOf("World")>=0 ? "World" : regions[0]);
-
-    groupBySelect.selectAll("option").each(function() {
-      const v = this.value;
-      if ((v==="Industry" && !HAVE_INDUSTRY) || (v==="Gas Type" && !HAVE_GAS)) this.remove();
-    });
-    if (groupBySelect.selectAll("option").size()===1) {
-      groupBySelect.property("value", groupBySelect.select("option").attr("value"));
+    // Normalize groupBy value to dataset columns
+    function normalizedGroupBy(){
+      const v = (groupBySelect.empty() ? "Industry" : groupBySelect.property("value")) || "Industry";
+      const s = String(v).toLowerCase();
+      if (s.includes("gas")) return HAVE_GAS ? "Gas Type" : (HAVE_INDUSTRY ? "Industry" : null);
+      if (s.includes("industry")) return HAVE_INDUSTRY ? "Industry" : (HAVE_GAS ? "Gas Type" : null);
+      return HAVE_INDUSTRY ? "Industry" : (HAVE_GAS ? "Gas Type" : null);
     }
 
     // Long format
@@ -159,16 +163,17 @@
     }
 
     function update() {
-      const region = (regionSelect.property("value") || "").trim();
-      const groupBy = groupBySelect.property("value");
-      const metric = metricSelect.property("value");
+      const region = regionSelect.empty() ? (long[0]?.region || "") : (regionSelect.property("value") || "").trim();
+      const groupBy = normalizedGroupBy();
+      const metric = (metricSelect.empty() ? "absolute" : metricSelect.property("value")) || "absolute";
+
+      if (!groupBy) return clearViz("No valid grouping available in this dataset.");
 
       const data = long.filter(d => d.region === region);
       if (!data.length) return clearViz("No data for this selection.");
 
       const keyAccessor = (d) => (groupBy === "Industry" ? d.industry : d.gas);
 
-      // Build map -> if after excluding totals we get zero series, we keep totals
       const groupedRaw = d3.rollup(
         data,
         v => d3.sum(v, d => d.value),
@@ -201,7 +206,7 @@
       }
 
       let series = buildSeries(true);
-      if (!series.length) series = buildSeries(false); // fallback: allow totals to avoid empty
+      if (!series.length) series = buildSeries(false);
 
       if (!series.length) return clearViz("No series available.");
 
@@ -225,8 +230,8 @@
           if (metric==="absolute") {
             val = (v && isFinite(v.value)) ? +v.value : 0;
           } else {
-            const pctv = (v && isFinite(v.pct)) ? v.pct : 0;
-            val = pctv * 100;
+            const pctv = (v && isFinite(v.pct)) ? d3.clamp(-CFG.MAX_PCT, s.values.find(d=>+d.quarter===+q)?.pct*100 || 0, CFG.MAX_PCT) : 0;
+            val = pctv;
           }
           row[s.key] = val;
         }
@@ -240,7 +245,6 @@
       x.domain(d3.extent(quarters));
       xOverview.domain(x.domain());
 
-      // Y domain
       let yMin = 0, yMax = 0;
       for (let L of layers) {
         for (let d of L) {
@@ -370,9 +374,9 @@
     }
 
     update();
-    regionSelect.on("change", update);
-    groupBySelect.on("change", update);
-    metricSelect.on("change", update);
+    if (!regionSelect.empty()) regionSelect.on("change", update);
+    if (!groupBySelect.empty()) groupBySelect.on("change", update);
+    if (!metricSelect.empty()) metricSelect.on("change", update);
   })
   .catch(err => {
     container.append("div").style("padding","16px").style("color","#ffb4b4")
