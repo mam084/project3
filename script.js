@@ -1,5 +1,4 @@
-
-// script.js — Emissions Explorer (stable colors + keyed joins)
+// script.js — Emissions Explorer (robust region detection + safe total filtering)
 (function() {
   const container = d3.select("#viz");
   if (container.empty()) return;
@@ -104,13 +103,16 @@
     const cols = raw.columns || Object.keys(raw[0]);
     const quarterCols = cols.filter(c => /^\\d{4}Q[1-4]$/.test(c)).sort();
 
-    const REGION_COL = cols.includes("Country") ? "Country" : (cols.includes("Region") ? "Region" : null);
-    if (!REGION_COL) throw new Error("Missing Country/Region column");
+    // Robust region column detection
+    const regionCandidates = ["Country","Region","Region Name","Area","Location"];
+    let REGION_COL = null;
+    for (const c of regionCandidates) if (cols.includes(c)) { REGION_COL = c; break; }
+    if (!REGION_COL) throw new Error("Missing region/country column");
 
     const HAVE_INDUSTRY = cols.includes("Industry");
     const HAVE_GAS = cols.includes("Gas Type");
 
-    const regions = Array.from(new Set(raw.map(r => r[REGION_COL])))
+    const regions = Array.from(new Set(raw.map(r => (r[REGION_COL]||"").trim())))
       .sort((a,b) => (a==="World"? -1 : b==="World"? 1 : d3.ascending(a,b)));
 
     regionSelect.selectAll("option").data(regions, d=>d).join("option")
@@ -134,9 +136,9 @@
         const dt = parseQuarter(q);
         if (!dt) continue;
         long.push({
-          region: row[REGION_COL],
-          industry: row["Industry"] || null,
-          gas: row["Gas Type"] || null,
+          region: (row[REGION_COL]||"").trim(),
+          industry: (row["Industry"]||"").trim() || null,
+          gas: (row["Gas Type"]||"").trim() || null,
           quarter: dt,
           value: v
         });
@@ -157,7 +159,7 @@
     }
 
     function update() {
-      const region = regionSelect.property("value");
+      const region = (regionSelect.property("value") || "").trim();
       const groupBy = groupBySelect.property("value");
       const metric = metricSelect.property("value");
 
@@ -165,36 +167,43 @@
       if (!data.length) return clearViz("No data for this selection.");
 
       const keyAccessor = (d) => (groupBy === "Industry" ? d.industry : d.gas);
-      const grouped = d3.rollup(
+
+      // Build map -> if after excluding totals we get zero series, we keep totals
+      const groupedRaw = d3.rollup(
         data,
         v => d3.sum(v, d => d.value),
         d => keyAccessor(d),
         d => +d.quarter
       );
 
-      let series = [];
-      grouped.forEach((byQ, keyRaw) => {
-        let key = keyRaw || "Unspecified";
-        if (groupBy === "Industry" && CFG.EXCLUDE_TOTAL_RE.test(String(key))) return;
-        if (groupBy === "Gas Type" && CFG.EXCLUDE_GAS_RE.test(String(key))) return;
-
-        const arr = Array.from(byQ, ([ts, val]) => ({ quarter: new Date(+ts), value: +val }))
-                        .sort((a,b)=>a.quarter-b.quarter);
-        if (!arr.length) return;
-
-        const base = firstNonZero(arr);
-        arr.forEach(d => {
-          const p = pct(d.value, base);
-          let pctVal = p==null || !isFinite(p) ? 0 : p*100;
-          if (pctVal > CFG.MAX_PCT) pctVal = CFG.MAX_PCT;
-          if (pctVal < -CFG.MAX_PCT) pctVal = -CFG.MAX_PCT;
-          d.pct = pctVal/100;
+      function buildSeries(excludeTotals){
+        const out = [];
+        groupedRaw.forEach((byQ, keyRaw) => {
+          let key = keyRaw || "Unspecified";
+          if (excludeTotals) {
+            if (groupBy === "Industry" && CFG.EXCLUDE_TOTAL_RE.test(String(key))) return;
+            if (groupBy === "Gas Type" && CFG.EXCLUDE_GAS_RE.test(String(key))) return;
+          }
+          const arr = Array.from(byQ, ([ts, val]) => ({ quarter: new Date(+ts), value: +val }))
+                          .sort((a,b)=>a.quarter-b.quarter);
+          if (!arr.length) return;
+          const base = firstNonZero(arr);
+          arr.forEach(d => {
+            const p = pct(d.value, base);
+            let pctVal = p==null || !isFinite(p) ? 0 : p*100;
+            if (pctVal > CFG.MAX_PCT) pctVal = CFG.MAX_PCT;
+            if (pctVal < -CFG.MAX_PCT) pctVal = -CFG.MAX_PCT;
+            d.pct = pctVal/100;
+          });
+          out.push({ key, values: arr, latest: arr[arr.length-1] });
         });
+        return out;
+      }
 
-        series.push({ key, values: arr, latest: arr[arr.length-1] });
-      });
+      let series = buildSeries(true);
+      if (!series.length) series = buildSeries(false); // fallback: allow totals to avoid empty
 
-      if (!series.length) return clearViz("No series available (filters removed everything).");
+      if (!series.length) return clearViz("No series available.");
 
       // Rank & TopN
       series.sort((a,b) => {
@@ -250,10 +259,8 @@
       y.domain([yMin, yMax]).nice();
       yOverview.domain(y.domain());
 
-      // Stable colors
       const fillFor = (d) => colorFor(groupBy, d.key);
 
-      // Series paths (keyed joins)
       const paths = gSeries.selectAll("path.layer").data(layers, d => d.key);
       paths.enter().append("path").attr("class","layer")
           .attr("fill", fillFor).attr("opacity", 0.9)
@@ -274,7 +281,6 @@
       gOverview.selectAll("g.yov").data([0]).join("g").attr("class","yov")
         .call(d3.axisLeft(yOverview).ticks(3).tickFormat(()=>""));
 
-      // Default brush = last five years
       const lastQ = quarters[quarters.length - 1] || new Date(Date.UTC(2024,0,1));
       const idx0 = Math.max(0, quarters.length - 5*4);
       const x0 = xOverview(quarters[idx0] || quarters[0]);
@@ -311,8 +317,7 @@
         const g = enter.append("g").attr("class","leg").style("cursor","pointer");
         g.append("rect").attr("width",12).attr("height",12).attr("y",-12);
         g.append("text").attr("x",16).attr("y",-2).attr("fill","#aab2bd").attr("font-size",".9rem")
-         .attr("dominant-baseline","central")
-         .attr("title", d=>d);
+         .attr("dominant-baseline","central").attr("title", d=>d);
         return g;
       });
       items.attr("transform",(d,i)=>`translate(${i*180},0)`)
