@@ -1,59 +1,29 @@
-// script.js — Simple, no-total-filter version (stable colors, keyed joins)
+// script.js — Emissions Explorer (final hardening)
 (function() {
-  const container = d3.select("#viz");
+  // Find container (fallback to body if missing)
+  let container = d3.select("#viz");
   if (container.empty()) {
-    d3.select("body").append("div").attr("id","viz");
+    container = d3.select("body").append("div").attr("id","viz").style("margin","1rem");
   }
 
   function getWidth() {
     const wrap = document.querySelector(".wrap");
-    const w = wrap ? wrap.clientWidth : (document.getElementById("viz")?.clientWidth || window.innerWidth);
+    const w = wrap ? wrap.clientWidth : container.node().clientWidth || window.innerWidth;
     return Math.min(1100, Math.max(640, w || 800));
   }
 
-  // Stable colors per (groupBy::key)
+  // Stable string -> HSL mapping
   const colorCache = new Map();
   function hash32(str){
     let h = 2166136261 >>> 0;
-    for (let i=0;i<str.length;i++){
+    for (let i=0; i<str.length; i++){
       h ^= str.charCodeAt(i);
       h = Math.imul(h, 16777619);
     }
     return h >>> 0;
   }
-
-// === Distinct palette utilities ===
-const PALETTE = [
-  // Tableau-like + ColorBrewer-ish distinct hues (30+)
-  "#4E79A7","#F28E2B","#E15759","#76B7B2","#59A14F","#EDC948","#B07AA1","#FF9DA7","#9C755F","#BAB0AC",
-  "#1F77B4","#FF7F0E","#2CA02C","#D62728","#9467BD","#8C564B","#E377C2","#7F7F7F","#BCBD22","#17BECF",
-  "#386CB0","#F0027F","#BF5B17","#666666","#1B9E77","#D95F02","#7570B3","#E7298A","#66A61E","#E6AB02",
-  "#A6761D","#666666"
-];
-
-function assignDistinctColors(keys, groupBy){
-  const used = new Set();
-  const map = new Map();
-  function idxForKey(k){
-    // stable base index from hash of groupBy::key
-    const base = hash32((groupBy||"")+"::"+(k||"")) % PALETTE.length;
-    // linear probe for a free slot
-    let i = base, steps = 0;
-    while (used.has(i) && steps < PALETTE.length){
-      i = (i + 1) % PALETTE.length;
-      steps++;
-    }
-    return i;
-  }
-  for (const k of keys){
-    const idx = idxForKey(k);
-    used.add(idx);
-    map.set(k, PALETTE[idx]);
-  }
-  return map;
-}
   function colorFor(groupBy, key){
-    const K = (groupBy||"") + "::" + (key||"");
+    const K = groupBy + "::" + key;
     if (colorCache.has(K)) return colorCache.get(K);
     const h = hash32(K) % 360;
     const c = `hsl(${h}, 62%, 56%)`;
@@ -62,18 +32,20 @@ function assignDistinctColors(keys, groupBy){
   }
 
   const CFG = {
-    topN: 8,
+    topN: 6,
     margin: {top: 20, right: 18, bottom: 32, left: 72},
     marginOverview: {top: 4, right: 18, bottom: 24, left: 72},
     height: 420,
     heightOverview: 90,
-    MAX_PCT: 300
+    MAX_PCT: 300,
+    EXCLUDE_TOTAL_RE: /(total|all|overall|aggregate|summary)/i,
+    EXCLUDE_GAS_RE: /^(greenhouse\\s*gas|total|all|overall|aggregate|summary)$/i
   };
 
   const W = getWidth();
-  const svg = d3.select("#viz").append("svg")
+  const svg = container.append("svg")
     .attr("width", W)
-    .attr("height", CFG.height + CFG.heightOverview + CFG.margin.top + CFG.margin.bottom + 56);
+    .attr("height", CFG.height + CFG.heightOverview + CFG.margin.top + CFG.margin.bottom + 50);
 
   const gMain = svg.append("g").attr("transform", `translate(${CFG.margin.left},${CFG.margin.top})`);
   const gOverview = svg.append("g").attr("transform", `translate(${CFG.marginOverview.left},${CFG.margin.top + CFG.height + 34})`);
@@ -89,16 +61,16 @@ function assignDistinctColors(keys, groupBy){
   const yOverview = d3.scaleLinear().range([innerHOverview, 0]);
 
   const area = d3.area()
-    .defined(d => Number.isFinite(d[0]) && Number.isFinite(d[1]))
-    .x(d => x(d.data.quarter))
-    .y0(d => y(d[0]))
-    .y1(d => y(d[1]));
+      .defined(d => isFinite(d[0]) && isFinite(d[1]))
+      .x(d => x(d.data.quarter))
+      .y0(d => y(d[0]))
+      .y1(d => y(d[1]));
 
   const areaOverview = d3.area()
-    .defined(d => Number.isFinite(d[0]) && Number.isFinite(d[1]))
-    .x(d => xOverview(d.data.quarter))
-    .y0(d => yOverview(d[0]))
-    .y1(d => yOverview(d[1]));
+      .defined(d => isFinite(d[0]) && isFinite(d[1]))
+      .x(d => xOverview(d.data.quarter))
+      .y0(d => yOverview(d[0]))
+      .y1(d => yOverview(d[1]));
 
   const xAxisG = gMain.append("g").attr("transform", `translate(0,${innerH})`);
   const yAxisG = gMain.append("g");
@@ -126,29 +98,31 @@ function assignDistinctColors(keys, groupBy){
   const groupBySelect = d3.select("#groupBySelect");
   const metricSelect = d3.select("#metricSelect");
 
-  d3.csv("./emissions.csv?v=20251106").then(raw => {
+  d3.csv("./emissions.csv").then(raw => {
     if (!raw || !raw.length) throw new Error("No rows in emissions.csv");
 
     const cols = raw.columns || Object.keys(raw[0]);
-    const quarterCols = cols.filter(c => /^\d{4}Q[1-4]$/.test(c)).sort();
+    const quarterCols = cols.filter(c => /^\\d{4}Q[1-4]$/.test(c)).sort();
 
-    // Detect region column
+    // Robust region column detection
     const regionCandidates = ["Country","Region","Region Name","Area","Location"];
-    const REGION_COL = regionCandidates.find(c => cols.includes(c)) || null;
+    let REGION_COL = null;
+    for (const c of regionCandidates) if (cols.includes(c)) { REGION_COL = c; break; }
     if (!REGION_COL) throw new Error("Missing region/country column");
 
     const HAVE_INDUSTRY = cols.includes("Industry");
     const HAVE_GAS = cols.includes("Gas Type");
 
-    // Populate region select
-    const regions = Array.from(new Set(raw.map(r => ((r[REGION_COL]||"")+"").trim()))).sort((a,b)=>d3.ascending(a,b));
+    // Populate region select if present
     if (!regionSelect.empty()) {
+      const regions = Array.from(new Set(raw.map(r => (r[REGION_COL]||"").trim())))
+        .sort((a,b) => (a==="World"? -1 : b==="World"? 1 : d3.ascending(a,b)));
       regionSelect.selectAll("option").data(regions, d=>d).join("option")
         .attr("value", d => d).text(d => d);
       regionSelect.property("value", regions.indexOf("World")>=0 ? "World" : regions[0]);
     }
 
-    // Normalize groupBy
+    // Normalize groupBy value to dataset columns
     function normalizedGroupBy(){
       const v = (groupBySelect.empty() ? "Industry" : groupBySelect.property("value")) || "Industry";
       const s = String(v).toLowerCase();
@@ -160,72 +134,79 @@ function assignDistinctColors(keys, groupBy){
     // Long format
     const long = [];
     for (const row of raw) {
-      const region = ((row[REGION_COL]||"")+"").trim();
-      if (!region) continue;
       for (const q of quarterCols) {
         const v = +row[q];
-        if (!Number.isFinite(v)) continue;
+        if (!isFinite(v)) continue;
         const dt = parseQuarter(q);
         if (!dt) continue;
         long.push({
-          region,
-          industry: ((row["Industry"]||"")+"").trim() || null,
-          gas: ((row["Gas Type"]||"")+"").trim() || null,
+          region: (row[REGION_COL]||"").trim(),
+          industry: (row["Industry"]||"").trim() || null,
+          gas: (row["Gas Type"]||"").trim() || null,
           quarter: dt,
           value: v
         });
       }
     }
 
-    // Brushing
     const brush = d3.brushX()
       .extent([[0,0], [innerWOverview, innerHOverview]])
       .on("brush end", brushed);
+
     const gBrush = gOverview.append("g").attr("class","brush");
 
     function firstNonZero(arr){
       for (let i=0;i<arr.length;i++){
-        if (arr[i] && Number.isFinite(arr[i].value) && Math.abs(arr[i].value) > 0) return +arr[i].value;
+        if (arr[i] && isFinite(arr[i].value) && Math.abs(arr[i].value) > 0) return +arr[i].value;
       }
       return 1;
     }
 
     function update() {
-      const regionSel = regionSelect.empty() ? regions[0] : (regionSelect.property("value") || regions[0]);
-      const region = regionSel.trim().toLowerCase();
+      const region = regionSelect.empty() ? (long[0]?.region || "") : (regionSelect.property("value") || "").trim();
       const groupBy = normalizedGroupBy();
       const metric = (metricSelect.empty() ? "absolute" : metricSelect.property("value")) || "absolute";
 
       if (!groupBy) return clearViz("No valid grouping available in this dataset.");
-      const data = long.filter(d => d.region.trim().toLowerCase() === region);
+
+      const data = long.filter(d => d.region === region);
       if (!data.length) return clearViz("No data for this selection.");
 
       const keyAccessor = (d) => (groupBy === "Industry" ? d.industry : d.gas);
 
-      // Rollup: KEEP TOTALS (no filtering)
-      const grouped = d3.rollup(
+      const groupedRaw = d3.rollup(
         data,
         v => d3.sum(v, d => d.value),
-        d => keyAccessor(d) || "Unspecified",
+        d => keyAccessor(d),
         d => +d.quarter
       );
 
-      // Build series
-      let series = [];
-      grouped.forEach((byQ, key) => {
-        const arr = Array.from(byQ, ([ts, val]) => ({ quarter: new Date(+ts), value: +val }))
-                        .sort((a,b)=>a.quarter-b.quarter);
-        if (!arr.length) return;
-        const base = firstNonZero(arr);
-        arr.forEach(d => {
-          const p = pct(d.value, base);
-          let pctVal = p==null || !Number.isFinite(p) ? 0 : p*100;
-          if (pctVal > CFG.MAX_PCT) pctVal = CFG.MAX_PCT;
-          if (pctVal < -CFG.MAX_PCT) pctVal = -CFG.MAX_PCT;
-          d.pct = pctVal/100;
+      function buildSeries(excludeTotals){
+        const out = [];
+        groupedRaw.forEach((byQ, keyRaw) => {
+          let key = keyRaw || "Unspecified";
+          if (excludeTotals) {
+            if (groupBy === "Industry" && CFG.EXCLUDE_TOTAL_RE.test(String(key))) return;
+            if (groupBy === "Gas Type" && CFG.EXCLUDE_GAS_RE.test(String(key))) return;
+          }
+          const arr = Array.from(byQ, ([ts, val]) => ({ quarter: new Date(+ts), value: +val }))
+                          .sort((a,b)=>a.quarter-b.quarter);
+          if (!arr.length) return;
+          const base = firstNonZero(arr);
+          arr.forEach(d => {
+            const p = pct(d.value, base);
+            let pctVal = p==null || !isFinite(p) ? 0 : p*100;
+            if (pctVal > CFG.MAX_PCT) pctVal = CFG.MAX_PCT;
+            if (pctVal < -CFG.MAX_PCT) pctVal = -CFG.MAX_PCT;
+            d.pct = pctVal/100;
+          });
+          out.push({ key, values: arr, latest: arr[arr.length-1] });
         });
-        series.push({ key: key || "Unspecified", values: arr, latest: arr[arr.length-1] });
-      });
+        return out;
+      }
+
+      let series = buildSeries(true);
+      if (!series.length) series = buildSeries(false);
 
       if (!series.length) return clearViz("No series available.");
 
@@ -237,8 +218,6 @@ function assignDistinctColors(keys, groupBy){
       });
       const top = series.slice(0, CFG.topN);
       const keys = top.map(d => d.key);
-      const colorMap = assignDistinctColors(keys, groupBy);
-      const fillFor = (d) => colorMap.get(d.key) || colorFor(groupBy, d.key);
 
       const quarters = top[0] ? top[0].values.map(d => d.quarter) : [];
       if (!quarters.length) return clearViz("No quarters available.");
@@ -247,9 +226,14 @@ function assignDistinctColors(keys, groupBy){
         const row = { quarter: q };
         for (const s of top) {
           const v = s.values.find(d => +d.quarter === +q);
-          row[s.key] = (metric==="absolute")
-            ? ((v && Number.isFinite(v.value)) ? +v.value : 0)
-            : ((v && Number.isFinite(v.pct)) ? Math.max(-CFG.MAX_PCT, Math.min(CFG.MAX_PCT, v.pct*100)) : 0);
+          let val = 0;
+          if (metric==="absolute") {
+            val = (v && isFinite(v.value)) ? +v.value : 0;
+          } else {
+            const pctv = (v && isFinite(v.pct)) ? d3.clamp(-CFG.MAX_PCT, s.values.find(d=>+d.quarter===+q)?.pct*100 || 0, CFG.MAX_PCT) : 0;
+            val = pctv;
+          }
+          row[s.key] = val;
         }
         return row;
       });
@@ -261,12 +245,11 @@ function assignDistinctColors(keys, groupBy){
       x.domain(d3.extent(quarters));
       xOverview.domain(x.domain());
 
-      // Y domain
       let yMin = 0, yMax = 0;
       for (let L of layers) {
         for (let d of L) {
-          if (Number.isFinite(d[0]) && d[0] < yMin) yMin = d[0];
-          if (Number.isFinite(d[1]) && d[1] > yMax) yMax = d[1];
+          if (isFinite(d[0]) && d[0] < yMin) yMin = d[0];
+          if (isFinite(d[1]) && d[1] > yMax) yMax = d[1];
         }
       }
       if (metric === "pct_change") {
@@ -280,19 +263,19 @@ function assignDistinctColors(keys, groupBy){
       y.domain([yMin, yMax]).nice();
       yOverview.domain(y.domain());
 
-      // Series paths (keyed)
+      const fillFor = (d) => colorFor(groupBy, d.key);
+
       const paths = gSeries.selectAll("path.layer").data(layers, d => d.key);
       paths.enter().append("path").attr("class","layer")
-        .attr("fill", fillFor).attr("opacity", 0.9)
+          .attr("fill", fillFor).attr("opacity", 0.9)
         .merge(paths).attr("fill", fillFor).attr("d", area);
       paths.exit().remove();
 
       xAxisG.call(d3.axisBottom(x).ticks(W < 700 ? 6 : 10));
       yAxisG.call(d3.axisLeft(y).ticks(6).tickFormat(d => metric==="absolute" ? d3.format(",")(d) : d + "%"));
 
-      // Overview
       gOverview.selectAll("path.ov").data(layers, d=>d.key)
-        .join("path").attr("class","ov").attr("fill", d => (colorMap.get(d.key) || colorFor(groupBy, d.key))).attr("opacity", .6)
+        .join("path").attr("class","ov").attr("fill", d => (colorMap && colorMap.get(d.key)) || colorFor(groupBy, d.key)).attr("opacity", .6)
         .attr("d", areaOverview);
 
       gOverview.selectAll("g.xov").data([0]).join("g").attr("class","xov")
@@ -302,14 +285,13 @@ function assignDistinctColors(keys, groupBy){
       gOverview.selectAll("g.yov").data([0]).join("g").attr("class","yov")
         .call(d3.axisLeft(yOverview).ticks(3).tickFormat(()=>""));
 
-      // Default brush to last 5 years
       const lastQ = quarters[quarters.length - 1] || new Date(Date.UTC(2024,0,1));
       const idx0 = Math.max(0, quarters.length - 5*4);
       const x0 = xOverview(quarters[idx0] || quarters[0]);
       const x1 = xOverview(lastQ);
       gBrush.call(brush).call(brush.move, [x0, x1]);
 
-      renderLegend(keys, groupBy, fillFor);
+      renderLegend(keys, groupBy, colorMap);
       addHover(stackInput, keys, metric, groupBy, fillFor);
     }
 
@@ -319,8 +301,8 @@ function assignDistinctColors(keys, groupBy){
       yAxisG.selectAll("*").remove();
       gOverview.selectAll("*").remove();
       gLegend.selectAll("*").remove();
-      d3.select("#viz").selectAll(".warn").remove();
-      d3.select("#viz").append("div").attr("class","warn").style("color","#ffb4b4").style("padding","8px").text(msg);
+      container.selectAll(".warn").remove();
+      container.append("div").attr("class","warn").style("color","#ffb4b4").style("padding","8px").text(msg);
       return;
     }
 
@@ -333,7 +315,7 @@ function assignDistinctColors(keys, groupBy){
       xAxisG.call(d3.axisBottom(x).ticks(W < 700 ? 6 : 10));
     }
 
-    function renderLegend(keys, groupBy, fillFor) {
+    function renderLegend($1, colorMap) {
       gLegend.selectAll("*").remove();
       const items = gLegend.selectAll("g.leg").data(keys, d=>d).join(enter => {
         const g = enter.append("g").attr("class","leg").style("cursor","pointer");
@@ -350,7 +332,7 @@ function assignDistinctColors(keys, groupBy){
             return cur < 0.4 ? 0.9 : 0.2;
           });
         });
-      items.select("rect").attr("fill", d => (colorMap.get(d) || colorFor(groupBy, d)));
+      items.select("rect").attr("fill", d => (colorMap && colorMap.get(d)) || colorFor(groupBy, d));
       items.select("text").text(d => d.length>24 ? d.slice(0,22)+"…" : d);
     }
 
@@ -397,7 +379,7 @@ function assignDistinctColors(keys, groupBy){
     if (!metricSelect.empty()) metricSelect.on("change", update);
   })
   .catch(err => {
-    d3.select("#viz").append("div").style("padding","16px").style("color","#ffb4b4")
+    container.append("div").style("padding","16px").style("color","#ffb4b4")
       .text("Failed to load or render the visualization: " + err.message);
     console.error(err);
   });
